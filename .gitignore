@@ -1,0 +1,28 @@
+
+# Datasets e imágenes pesadas
+dataset/
+data/
+*.zip
+
+# Entornos virtuales de Python
+venv/
+env/
+.venv/
+
+# Caché de Python y Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Pesos de modelos de Deep Learning
+*.h5
+*.pth
+*.keras
+
+# Archivos auxiliares de LaTeX
+*.aux
+*.log
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
