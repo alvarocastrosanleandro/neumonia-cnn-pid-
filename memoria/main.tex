@@ -10,6 +10,7 @@
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{geometry}
+\usepackage{parskip}
 
 \geometry{margin=2.5cm}
 
@@ -70,12 +71,34 @@ Explicación didáctica sobre convolución 2D, capas de pooling, funciones de ac
 
 \subsection{Estructura Metodológica en 8 Bloques}
 
-Descripción teórica de los 8 bloques de trabajo fijados en la planificación inicial del proyecto.
+En esta sección se describirán los procedimientos realizados para la implementación de las distintas arquitecturas que se han diseñado. 
 
 % --- 3. IMPLEMENTACIÓN ---
 \section{Implementación}
 
 Descripción modular de los cuadernos de Jupyter desarrollados, librerías empleadas (TensorFlow/Keras o PyTorch, OpenCV) y decisiones de diseño de código.
+
+
+\subsection{Preprocesado}
+La etapa de preprocesado de los datos de entrenamiento se ha documentado sobre el notebook \texttt{01\_eda\_y\_preprocesado.ipynb}. El preprocesamiento de los datos es esencial para que la red neuronal consiga aprender los parámetros necesarios y optimizar los resultados. Para su implementación, se han empleado las librerías de Python: \texttt{cv2}, \texttt{numpy}, \texttt{matplotlib}, \texttt{sklearn} y \texttt{os}.
+
+Como se ha comentado anteriormente, las imágenes provienen del repositorio de Kaggle ``gonzajl/neumona-x-rays-dataset''. Por ello, tras importar los paquetes necesarios, se descarga el conjunto de datos mediante la API de Kaggle y se almacena en la ruta ``./dataset/dataset/''. Una vez extraídas las imágenes, se observa que están divididas en dos directorios: ``neumonia'' y ``no-neumonia'', lo que permite dar comienzo a su preprocesamiento.
+
+En primer lugar, se diseña la función \texttt{cargar\_y\_preprocesar}, encargada de leer las imágenes en escala de grises de 8 bits y redimensionarlas a un tamaño fijo de 180x180 píxeles. Además, se normalizan las intensidades de los píxeles, pasando de un rango de [0,255] a [0,1]. Este paso es fundamental para mejorar la estabilidad numérica y acelerar la convergencia de la red convolucional durante el entrenamiento. Por último, a cada imagen se le asigna su etiqueta correspondiente. Dado que los modelos de aprendizaje profundo requieren de entradas numéricas, se realiza una codificación de las categorías: a las imágenes con ``neumonía'' se les asigna el valor 1, y a las catalogadas como ``no-neumonía'' se les asigna el valor 0. La función devuelve una tupla compuesta por el array de imágenes procesadas y el array de etiquetas. Como validación visual, dentro del notebook se incluye una impresión por pantalla de un ejemplo de cada clase haciendo uso de la librería \texttt{matplotlib.pyplot}.
+
+Una vez que el conjunto de datos se ha cargado con las dimensiones correctas y normalizadas, se procede a su particionado. En el desarrollo de este tipo de modelos, el conjunto de datos original se divide tradicionalmente en tres subconjuntos esenciales:
+
+\begin{itemize}
+    \item \textbf{Entrenamiento:} empleado para que la red convolucional aprenda y ajuste sus pesos.
+    \item \textbf{Validación:} utilizado para evaluar el rendimiento del modelo durante el entrenamiento (época a época) y ajustar los hiperparámetros, previniendo el sobreajuste.
+    \item \textbf{Pruebas:} reservado exclusivamente para evaluar el modelo final una vez entrenado, asegurando así que generaliza correctamente ante datos nunca antes vistos por la red.
+\end{itemize}
+
+Para llevar a cabo esta separación se emplea la función \texttt{train\_test\_split} del módulo \texttt{model\_selection} de la librería \texttt{sklearn}. En este caso, se ha reservado un 20\% de los datos iniciales para el conjunto de pruebas. Del 80\% restante, se destina un 15\% para validación y el resto para entrenamiento. En consecuencia, se obtienen tres estructuras de datos distintas: \texttt{X\_train} (imágenes de entrenamiento), \texttt{y\_train} (etiquetas de entrenamiento), \texttt{X\_val} (imágenes de validación), \texttt{y\_val} (etiquetas de validación), \texttt{X\_test} (imágenes de pruebas) y \texttt{y\_test} (etiquetas de pruebas).
+
+Finalmente, cabe destacar que la arquitectura de Keras y Tensorflow exige que los datos de entrada en capas convolucionales bidimensionales tengan 4 dimensiones: \textit{(número de muestras, alto, ancho, canales)}. Como los conjuntos de datos generados en escala de grises poseen únicamente 3 dimensiones, se aplica una transformación para añadir una dimensión extra (indicando que solo existe 1 canal).
+
+Tras completar este proceso, los conjuntos de datos quedan listos y en el formato óptimo para alimentar la arquitectura de la red convolucional.
 
 % --- 4. EXPERIMENTACIÓN ---
 \section{Experimentación y Resultados}
