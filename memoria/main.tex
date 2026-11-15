@@ -622,10 +622,147 @@ Por último, dado que el motor de ejecución Keras y Tensorflow exige que las ca
 
 Tras esta transformación, las estructuras de datos quedan completamente optimizadas para ser introducidas en la arquitectura de la red convolucional.
 \newpage
-\subsection{Modelo base }
+\subsection{Modelo base}
 \newpage
+
 \subsection{Data augmentation}
+
+El desarrollo de esta etapa se documenta e implementa en el notebook \texttt{03\_data\_augmentation.ipynb}. Su objetivo es aplicar técnicas de procesamiento digital de imágenes estudiadas en la asignatura para ampliar la variedad del conjunto de entrenamiento y mejorar la generalización respecto al modelo base.
+
+\subsubsection{Fundamentación y comparativa de dominio}
+El \textbf{Aumento de Datos (\textit{Data Augmentation})} consiste en generar artificialmente nuevas variantes de las imágenes del conjunto de entrenamiento (\texttt{X\_train}) aplicando transformaciones que no cambian la clase de la imagen (\texttt{neumonia} = 1 o \texttt{no-neumonia} = 0): rotaciones, simetrías (\textit{flips}), traslaciones, zoom o cambios de brillo y contraste. La idea fundamental es que las imágenes generadas tengan sentido y no se distingan de las originales.
+
+Al aumentar artificialmente el tamaño y la diversidad del conjunto de entrenamiento, la CNN ve en cada época (\textit{epoch}) una versión ligeramente distinta de cada imagen, aportando tres beneficios directos:
+\begin{enumerate}
+    \item \textbf{Evita el sobreajuste (\textit{overfitting}):} Dificulta que la red memorice las imágenes de entrenamiento y le obliga a aprender características invariantes.
+    \item \textbf{Multiplica el conjunto de entrenamiento:} Del mismo modo que en conjuntos pequeños (por ejemplo, de 2.900 imágenes) ver una versión distinta cada época multiplica los datos disponibles, sobre nuestro conjunto \texttt{X\_train} extraído de las 10.498 radiografías de Kaggle [8] permite entrenar la CNN con mucha mayor variedad sin necesitar más capturas reales.
+    \item \textbf{Mejora la generalización:} Ayuda a estabilizar y mejorar las métricas sobre los conjuntos de validación (\texttt{X\_val}) y prueba (\texttt{X\_test}).
+\end{enumerate}
+
+Aunque el aumento de datos es muy efectivo, siempre debe tener sentido según el tipo de imagen:
+\begin{itemize}
+    \item \textbf{En fotografías generales (ejemplo de flores):} Una flor sigue siendo una flor aunque se refleje horizontal o verticalmente (\texttt{horizontal\_flip=True}, \texttt{vertical\_flip=True}), se rote hasta $30^\circ$ o $40^\circ$ (\texttt{rotation\_range=40}), se desplace un $20\%$ (\texttt{width/height\_shift\_range=0.2}), se aplique zoom (\texttt{zoom\_range=0.2}) o sesgo (\texttt{shear\_range=0.2}). En cambio, no se aplican cambios extremos de brillo o color porque el color en los canales RGB (amarillo del girasol, rosa de los pétalos) es una señal de clase muy fuerte y distorsionarlo confunde al modelo.
+    \item \textbf{En radiografías de tórax:} Nuestras imágenes están preprocesadas en \textbf{escala de grises} con dimensión $(180, 180, 1)$, por lo que tienen un único canal de intensidad y no existen canales RGB ni conversión a HSI (Tema 2) [21]. En cambio, la radiografía tiene una posición anatómica fija (el paciente se sitúa erguido frente al detector). Por tanto, debemos usar rangos moderados y descartar las transformaciones que deformen la anatomía torácica.
+\end{itemize}
+
+\subsubsection{Estudio y selección de transformaciones geométricas (Tema 5)}
+Según el Tema 5 de la asignatura [21, 23], una transformación geométrica es una función $T$ que modifica la relación espacial entre los píxeles de una imagen, $T(x,y) = (x', y')$, dividiéndose en lineales y no lineales.
+
+\paragraph{Transformaciones geométricas lineales}
+Transforman rectas en rectas y se expresan en forma matricial mediante coordenadas homogéneas (hasta 8 grados de libertad):
+\begin{equation}
+    T\begin{pmatrix} x \\ y \\ 1 \end{pmatrix} = M \cdot \begin{pmatrix} x \\ y \\ 1 \end{pmatrix}, \qquad M = \begin{pmatrix} a & b & c \\ d & e & f \\ g & h & 1 \end{pmatrix}
+\end{equation}
+Según las propiedades que preservan, se clasifican en: \textbf{Rígidas} (preservan distancias y ángulos) $\subset$ \textbf{Semejanza} (preservan ángulos y proporciones) $\subset$ \textbf{Afines} (preservan paralelismo, 6 grados de libertad con $g=0, h=0$) $\subset$ \textbf{Proyectivas} (preservan colinealidad, 8 grados de libertad). Dentro de las afines, analizamos cada operación:
+
+\begin{enumerate}
+    \item \textbf{Rotación (\texttt{rotation\_range}) --- Rígida [SELECCIONADA: rotaciones leves de $5^\circ$ a $15^\circ$]:}
+    Respecto al centro geométrico de la imagen $(x_c, y_c)$, viene dada por:
+    \begin{equation}
+        M_{\text{rot}} = \begin{pmatrix} \cos(\theta) & -\text{sen}(\theta) & x_c \\ \text{sen}(\theta) & \cos(\theta) & y_c \\ 0 & 0 & 1 \end{pmatrix}
+    \end{equation}
+    \textit{Justificación:} A diferencia de las flores ($40^\circ$), una radiografía se realiza con el paciente derecho, aunque puede presentar una leve inclinación postural. Aplicamos rotaciones leves ($\theta \in [-10^\circ, +10^\circ]$ o $15^\circ$) para mantener el sentido clínico.
+
+    \item \textbf{Traslación (\texttt{width\_shift\_range}, \texttt{height\_shift\_range}) --- Rígida [SELECCIONADA: $5\%$ a $10\%$]:}
+    Desplaza los píxeles según el vector $(t_x, t_y)$:
+    \begin{equation}
+        M_{\text{tras}} = \begin{pmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{pmatrix}
+    \end{equation}
+    \textit{Justificación:} Descentra ligeramente la radiografía para que la CNN aprenda a localizar la neumonía independientemente de su posición exacta. Reducimos el $20\%$ de las flores a un $5\%\text{--}10\%$ para no dejar parte de los pulmones fuera de la matriz de $180 \times 180$.
+
+    \item \textbf{Re-escalado o Zoom (\texttt{zoom\_range}) --- Afín / Semejanza [SELECCIONADA: $10\%$ a $15\%$]:}
+    Operador definido por los factores $(\lambda, \mu)$:
+    \begin{equation}
+        M_{\text{escala}} = \begin{pmatrix} \lambda & 0 & 0 \\ 0 & \mu & 0 \\ 0 & 0 & 1 \end{pmatrix}
+    \end{equation}
+    Cuando $\lambda = \mu > 1$ amplía la imagen y cuando $\lambda = \mu < 1$ la reduce, conservando las proporciones.
+    \textit{Justificación:} Simula distintos tamaños de caja torácica y pequeñas variaciones de distancia al tomar la placa, manteniendo $\lambda = \mu$ para no deformar los pulmones.
+
+    \item \textbf{Simetría o Reflexión (\texttt{horizontal\_flip}, \texttt{vertical\_flip}) --- Rígida [VERTICAL DESCARTADA / HORIZONTAL EN PRUEBA]:}
+    \begin{equation}
+        M_{\text{sim}} = \begin{pmatrix} \pm 1 & 0 & 0 \\ 0 & \pm 1 & 0 \\ 0 & 0 & 1 \end{pmatrix}
+    \end{equation}
+    \textit{Justificación:} El \textbf{flip vertical se descarta} (\texttt{vertical\_flip=False}) porque pondría los pulmones boca abajo, algo inexistente en validación y test. El \textbf{flip horizontal} refleja la imagen de izquierda a derecha: aunque invierte la posición del corazón, los artículos de referencia [9, 17, 18] lo utilizan porque las opacidades de neumonía tienen el mismo aspecto en ambos pulmones, por lo que se evaluará como variante experimental.
+
+    \item \textbf{Sesgo (\texttt{shear\_range}) y Transformación Proyectiva --- Afín y Proyectiva [DESCARTADAS o sesgo mínimo]:}
+    El sesgo empuja la imagen mediante los coeficientes $s_v$ y $s_h$:
+    \begin{equation}
+        M_{\text{sesgo}} = \begin{pmatrix} 1 & s_v & 0 \\ s_h & 1 & 0 \\ 0 & 0 & 1 \end{pmatrix}
+    \end{equation}
+    mientras que la proyectiva (8 grados de libertad) altera la perspectiva. En radiografías de tórax la captura es frontal y paralela al chasis, por lo que un sesgo elevado o cambio proyectivo deformaría la caja torácica de forma irreal.
+\end{enumerate}
+
+\paragraph{Transformaciones geométricas no lineales y métodos de interpolación}
+En el Tema 5 [21] se estudian tres transformaciones no lineales (no expresables en forma matricial): \textbf{Swirl} (rotación en remolino en torno a $(x_c, y_c)$ que decrece con el radio $r = \sqrt{d_x^2 + d_y^2}$ hasta $r_{\max}$), \textbf{Ripper} (distorsión sinusoidal $\hat{x} = x + a_x \text{sen}(2\pi y/\tau_x)$, $\hat{y} = y + a_y \text{sen}(2\pi x/\tau_y)$) y \textbf{Distorsión esférica} (efecto de lente esférica de radio $r_{\max}$ e índice $p$). \textbf{Se descartan todas} porque ondulan o retuercen las costillas y los pulmones creando artefactos irreales.
+
+Por otra parte, dado que las imágenes son señales discretas pero las transformaciones geométricas operan en el plano continuo, cuando una coordenada transformada cae en valores no enteros es necesario aplicar \textbf{interpolación} (Tema 5) [21]:
+\begin{itemize}
+    \item Se descarta el \textbf{vecino más próximo} porque genera un efecto de cuadriculado evidente, y se descarta la \textbf{interpolación bicúbica} ($A'(x) = c_1 x^3 + c_2 x^2 + c_3 x + c_4$ sobre 16 vecinos) por su mayor coste computacional en cada época.
+    \item Se selecciona la \textbf{interpolación bilineal}, que aplica dos interpolaciones lineales (horizontal y vertical) entre los 4 píxeles vecinos según las distancias $a$ y $b$:
+    \begin{equation}
+        A'(p_x, s) = (1-a)A(i,s) + aA(d,s), \quad A'(p_x, r) = (1-a)A(i,r) + aA(d,r) \implies A'(p_x, p_y) = (1-b)A'(p_x, s) + bA'(p_x, r)
+    \end{equation}
+    Para los píxeles vacíos que aparecen en los límites al rotar o trasladar, se utiliza \texttt{fill\_mode='nearest'} (duplicar el borde, igual que en el ejemplo de flores y como se indica en el Tema 3) o relleno de ceros (marco negro).
+\end{itemize}
+
+\subsubsection{Estudio y selección de transformaciones de intensidad (Tema 2)}
+Según el Tema 2 [21, 22], el histograma representa las frecuencias $n_k$ de cada nivel de gris $r_k$, y el \textbf{histograma normalizado} $p(r_k) = \frac{n_k}{N}$ estima su probabilidad. Las transformaciones de intensidad operan píxel a píxel modificando únicamente su nivel de gris: $s = T(r)$.
+
+\begin{itemize}
+    \item \textbf{Transformaciones lineales ($T(r) = \alpha \cdot r + \beta$) [SELECCIONADAS en rangos suaves]:}
+    El parámetro $\alpha$ controla el \textbf{contraste} ($\alpha > 1$ aumenta el contraste, $\alpha < 1$ lo disminuye y $\alpha = 1$ es la identidad) y $\beta$ controla el \textbf{brillo} ($\beta > 0$ aclara la imagen y $\beta < 0$ la oscurece). Variar suavemente $\alpha$ y $\beta$ ($\pm 10\%\text{--}15\%$) simula radiografías tomadas con distinta exposición de rayos X. Al igual que en el ejemplo de las flores, se descartan cambios extremos (como $\alpha=2$ o $\beta=\pm 100$) porque saturarían el pulmón en blanco ($1.0$ o $255$), simulando falsas opacidades de neumonía. La \textbf{transformación negativa} ($T(r) = 255 - r$) se descarta para aumento aleatorio porque invierte los tonos respecto a los conjuntos de validación y test.
+    \item \textbf{Transformaciones no lineales:}
+    La \textbf{corrección gamma} ($T(r) = c \cdot r^\gamma$) permite expandir las regiones oscuras ($\gamma < 1$) o las claras ($\gamma > 1$) sin saturar bruscamente los extremos, por lo que se acepta en rangos suaves ($\gamma \in [0.85, 1.15]$). En cambio, las transformaciones \textbf{logarítmica} ($T(r) = c \cdot \log(1+r)$) y \textbf{exponencial} ($T(r) = e^{r/c}-1$) producen cambios demasiado severos en el histograma y se descartan. Por último, la \textbf{ecualización del histograma} ($s_k = (L-1)\sum_{i=0}^{k} p(r_i)$) y la \textbf{expansión (\textit{stretching})} ($s = \frac{(r-r_1)(L-1)}{r_2-r_1}$) constituyen técnicas fijas de preprocesado para imágenes de bajo contraste, no perturbaciones aleatorias de entrenamiento.
+\end{itemize}
+
+\subsubsection{Estudio de ruido y filtros en el dominio espacial (Tema 3)}
+En el Tema 3 [21, 22], un filtro espacial actúa sobre un entorno vecindad $\mathcal{N}(x,y)$ de cada píxel: $g(x,y) = T(f(u,v))$ para $(u,v) \in \mathcal{N}(x,y)$. Evaluamos su papel en el aumento de datos:
+
+\begin{itemize}
+    \item \textbf{Modelos de ruido:} El \textbf{ruido impulsivo o sal y pimienta} (impulsos blancos y negros aislados) \textbf{se descarta}, ya que los puntos blancos («sal») sobre el fondo oscuro pulmonar simularían falsos infiltrados (si existiese en origen, se eliminaría mediante el \textbf{filtro estadístico ordenado de la mediana}, operación no lineal que ordena la vecindad y toma el valor central conservando los bordes mejor que los filtros mínimo o máximo). Por el contrario, el \textbf{ruido aditivo gaussiano}, $g(x,y) = f(x,y) + r(x,y)$ con distribución normal $p(z) = \frac{1}{\sqrt{2\pi}\sigma} e^{-(z-\bar{z})^2 / 2\sigma^2}$, modela el ruido electrónico de los sensores; aplicado con desviación $\sigma$ muy baja como variante experimental, evita que la CNN memorice píxeles aislados.
+    \item \textbf{Filtros lineales de suavizado (Convolución):} Operan mediante $g(x,y) = \sum_{i=-a}^{a} \sum_{j=-b}^{b} w(i,j) f(x+i, y+j)$. El \textbf{filtro de la media} ($w(i,j) = 1/m^2$) emborrona excesivamente los bordes, mientras que el \textbf{filtro gaussiano}, basado en $G(x,y) = \frac{1}{2\pi\sigma^2} e^{-\frac{x^2+y^2}{2\sigma^2}}$ (separable en dos máscaras 1D, $G(x,y)=g(x)\cdot g(y)$), da más peso al píxel central y genera un suavizado natural. Solo se contempla con máscara mínima ($3\times 3, \sigma \le 1$) para no borrar los patrones de la neumonía.
+    \item \textbf{Filtros de realce basados en derivadas [DESCARTADOS]:} Tanto el \textbf{Gradiente digital} de 1.ª derivada ($\nabla f = [g_x, g_y]^T$ mediante máscaras de \textbf{Roberts}, \textbf{Prewitt}, \textbf{Sobel} o el \textbf{Detector de Canny} con suavizado gaussiano, Sobel, supresión no máxima e histéresis de umbral $T_{\min}, T_{\max}$) como el \textbf{Laplaciano digital} de 2.ª derivada ($\nabla^2 f = [f(x+1,y)+f(x-1,y)+f(x,y+1)+f(x,y-1)]-4f(x,y)$) anulan las zonas de intensidad constante y dejan únicamente los bordes. Como las opacidades bacterianas y víricas son zonas densas dentro del pulmón, sustituir la radiografía por un mapa de bordes eliminaría la información diagnóstica principal.
+\end{itemize}
+
+La Tabla \ref{tab:resumen_da} sintetiza las decisiones justificadas para el pipeline.
+
+\begin{table}[htbp]
+\centering
+\caption{Resumen de transformaciones de la asignatura evaluadas para el bloque de \textit{Data Augmentation}.}
+\label{tab:resumen_da}
+\footnotesize
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{p{3.5cm} p{2.3cm} p{2.4cm} p{6.2cm}}
+\hline
+\textbf{Transformación} & \textbf{Tema PID} & \textbf{Decisión} & \textbf{Justificación en Radiografías de Tórax} \\
+\hline
+Rotación leve & Tema 5 (Lineal) & \textbf{SÍ} ($5^\circ\text{--}15^\circ$) & Simula pequeñas inclinaciones posturales sin perder la orientación vertical real. \\
+Traslación (\textit{shift}) & Tema 5 (Lineal) & \textbf{SÍ} ($5\%\text{--}10\%$) & Descentra ligeramente el tórax sin cortar los campos pulmonares fuera de la matriz $180\times 180$. \\
+Re-escalado (\textit{zoom}) & Tema 5 (Lineal) & \textbf{SÍ} ($10\%\text{--}15\%$) & Simula distintos tamaños de tórax conservando las proporciones ($\lambda = \mu$). \\
+Simetría (\textit{Flip}) & Tema 5 (Lineal) & \textbf{H: En prueba} / \textbf{V: NO} & El \textit{flip} vertical invierte el tórax boca abajo; el horizontal se evalúa según la literatura [9, 18]. \\
+Sesgo y Proyectiva & Tema 5 (Lineal) & \textbf{NO} (o mínimo) & La captura radiográfica es frontal; deformarían la caja torácica. \\
+\textit{Swirl}, \textit{Ripper}, Esférica & Tema 5 (No lineal) & \textbf{NO} & Ondulan y retuercen las costillas creando imágenes irreales. \\
+Interpolación y Bordes & Tema 5 y 3 & \textbf{Bilineal} y \texttt{nearest} & Evita el cuadriculado del vecino más próximo y rellena bordes sin crear cortes bruscos. \\
+Brillo ($\beta$), Contraste ($\alpha$) y Gamma ($\gamma$) & Tema 2 (Intensidad) & \textbf{SÍ} ($\pm 10\%\text{--}15\%$) & Simulan distinta exposición de rayos X sin quemar la imagen en blanco ni negro. \\
+Negativo, Log y Exp & Tema 2 (Intensidad) & \textbf{NO} & Alteran drásticamente los niveles de gris respecto a validación y test. \\
+Ruido Sal y Pimienta & Tema 3 (Ruido) & \textbf{NO} & Los impulsos blancos («sal») simularían manchas falsas en el pulmón. \\
+Ruido / Filtro Gaussiano & Tema 3 (Espacial) & \textbf{Variante leve} & Con $\sigma$ muy bajo simula ruido del sensor o leve desenfoque sin borrar detalles. \\
+Sobel, Canny, Laplaciano & Tema 3 (Realce) & \textbf{NO} & Dejar solo bordes elimina las zonas constantes donde se observa el exudado alveolar. \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Implementación del pipeline y metodología experimental}
+El flujo de procesamiento (\textit{pipeline}) implementado recibe como entrada los tensores preprocesados en la sección 3.1 y avanza a través de las siguientes etapas:
+\begin{enumerate}
+    \item \textbf{Aplicación exclusiva sobre el conjunto de entrenamiento:} A partir de las particiones generadas (\texttt{X\_train}, \texttt{X\_val}, \texttt{X\_test}) con forma $(muestras, 180, 180, 1)$ y valores normalizados en $[0, 1]$, el generador de aumento de datos se conecta \textbf{únicamente a \texttt{X\_train}}. Los conjuntos de validación y prueba no se transforman para evaluar siempre la red sobre radiografías reales sin alterar.
+    \item \textbf{Generación dinámica en cada época:} Siguiendo la estructura de \texttt{ImageDataGenerator} (y capas de aumento de Keras/TensorFlow), no se almacenan copias físicas en disco, sino que en cada época (\textit{epoch}) se generan lotes (\textit{batches}) transformados al vuelo. Para cada radiografía del lote se muestrean aleatoriamente los parámetros geométricos (rotación leve, traslación y zoom), se calcula la imagen mediante \textbf{interpolación bilineal} rellenando los bordes con \texttt{fill\_mode='nearest'}, y posteriormente se aplica el ajuste suave de intensidad (brillo/contraste o gamma) y ruido gaussiano leve, manteniendo los píxeles acotados en $[0, 1]$.
+    \item \textbf{Pruebas de variantes y evaluación frente al modelo base:} Manteniendo exactamente la misma arquitectura de CNN propia del Bloque 2, se reentrena el modelo probando tres variantes progresivas: \textbf{Variante 1} (únicamente transformaciones geométricas suaves: rotación, traslación y zoom), \textbf{Variante 2} (añadiendo \texttt{horizontal\_flip=True}) y \textbf{Variante 3} (incorporando variaciones suaves de brillo/contraste del Tema 2 y ruido gaussiano leve del Tema 3).
+\end{enumerate}
+
+Todas las variantes se comparan con el modelo base en la Sección 4 bajo el protocolo común (matriz de confusión, exactitud, precisión, sensibilidad/\textit{recall}, especificidad, F1-score y curvas de aprendizaje de pérdida y exactitud), priorizando la mejora en la \textbf{sensibilidad (\textit{recall})} para minimizar los falsos negativos clínicos y comprobando cómo la proximidad entre las curvas de entrenamiento y validación demuestra la reducción del sobreajuste.
 \newpage
+
 \subsection{Fine tuning}
 \newpage
 \subsection{Arquitectura de articulos científicos}
@@ -640,6 +777,24 @@ Tras esta transformación, las estructuras de datos quedan completamente optimiz
 \section{Experimentación y Resultados}
 
 Protocolo común de evaluación: matrices de confusión, exactitud, precisión, sensibilidad (\textit{recall}), $F_1$-score y curvas de aprendizaje para cada modelo entrenado.
+
+\begin{table}[H]
+\centering
+\caption{Evaluación comparativa sobre el conjunto de prueba (\texttt{X\_test}, $N=2.100$) del Modelo Base frente a las tres variantes de \textit{Data Augmentation} (Bloque 3).}
+\label{tab:resultados_bloque3_da}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Modelo / Variante} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall (Sens.)} & \textbf{Especificidad} & \textbf{F1-Score} & \textbf{AUC-ROC} & \textbf{FN (Brecha Acc)} \\
+\midrule
+0. Modelo Base (Sin DA) & 0.9581 & 0.9521 & 0.9648 & 0.9514 & 0.9584 & 0.9859 & 37 (+0.0375) \\
+\textbf{1. Variante 1 (Geom. Suave - T.5)} & 0.9452 & 0.9163 & \textbf{0.9800} & 0.9105 & 0.9471 & \textbf{0.9900} & \textbf{21 (+0.0027)} \\
+2. Variante 2 (Geom. + Flip H - T.5) & 0.9367 & 0.9033 & 0.9781 & 0.8952 & 0.9392 & 0.9875 & 23 (+0.0117) \\
+3. Variante 3 (PID Completo - T.2, 3, 5) & 0.9514 & \textbf{0.9620} & 0.9400 & \textbf{0.9629} & \textbf{0.9509} & 0.9893 & 63 (-0.0117) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
 
 % --- 5. USO DE INTELIGENCIA ARTIFICIAL ---
 \newpage
