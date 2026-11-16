@@ -826,6 +826,25 @@ Todas las variantes se comparan con el modelo base en la Sección 4 bajo el prot
 
 Protocolo común de evaluación: matrices de confusión, exactitud, precisión, sensibilidad (\textit{recall}), $F_1$-score y curvas de aprendizaje para cada modelo entrenado.
 
+\begin{table}[H]
+\centering
+\caption{Evaluación comparativa sobre el conjunto de prueba (\texttt{X\_test}, $N=2.100$) del Modelo Base frente a las tres variantes de \textit{Data Augmentation} (Bloque 3).}
+\label{tab:resultados_bloque3_da}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Modelo / Variante} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall (Sens.)} & \textbf{Especificidad} & \textbf{F1-Score} & \textbf{AUC-ROC} & \textbf{FN (Brecha Acc)} \\
+\midrule
+0. Modelo Base (Sin DA) & 0.9581 & 0.9521 & 0.9648 & 0.9514 & 0.9584 & 0.9859 & 37 (+0.0375) \\
+\textbf{1. Variante 1 (Geom. Suave - T.5)} & 0.9452 & 0.9163 & \textbf{0.9800} & 0.9105 & 0.9471 & \textbf{0.9900} & \textbf{21 (+0.0027)} \\
+2. Variante 2 (Geom. + Flip H - T.5) & 0.9367 & 0.9033 & 0.9781 & 0.8952 & 0.9392 & 0.9875 & 23 (+0.0117) \\
+3. Variante 3 (PID Completo - T.2, 3, 5) & 0.9514 & \textbf{0.9620} & 0.9400 & \textbf{0.9629} & \textbf{0.9509} & 0.9893 & 63 (-0.0117) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+
 % --- 5. USO DE INTELIGENCIA ARTIFICIAL ---
 \newpage
 \section{Declaración del Uso de Inteligencia Artificial}
