@@ -578,7 +578,6 @@ El desarrollo experimental del proyecto se articula en siete bloques metodológi
 
 \item \textbf{\textit{Transfer learning}:} reutilización de modelos convolucionales profundos preentrenados en conjuntos de datos masivos (por ejemplo, \textit{ImageNet}). Se evalúan estrategias de extracción de características con capas congeladas y de \textit{fine-tuning} para determinar la mejora en la velocidad de convergencia y en la capacidad de discriminación.
 
-\item \textbf{Evaluación comparativa y análisis de errores:} evaluación cuantitativa y cualitativa final de todos los modelos desarrollados sobre el subconjunto de prueba común. Se analizan exhaustivamente las matrices de confusión y las métricas de rendimiento (\textit{accuracy}, \textit{recall}, $F_1$-score, etc.), prestando especial atención a la minimización de falsos negativos debido a su trascendencia en la práctica médica.
 \end{enumerate}
 
 \newpage
@@ -625,54 +624,54 @@ Tras esta transformación, las estructuras de datos quedan completamente optimiz
 \subsection{Modelo base}
 \label{subsec:modelo_base}
 
-El primer bloque experimental consiste en el diseño e implementación de una CNN desde cero. El objetivo de este módulo no es alcanzar el máximo rendimiento posible de inmediato, sino establecer una base sólida. Esto permite evaluar el comportamiento inicial de las capas de convolución y  pooling y medir cuantitativamente la mejora que aportarán las técnicas complejas data augmentation o transfer learning en iteraciones posteriores.
+Como punto de partida del estudio experimental se define una \{arquitectura CNN base en escala de grises con entrada $(180, 180, 1)$,  esta estrategia es diseñada para ser lo suficientemente ligera como para entrenar en tiempos razonables en Google Colab en el anterior notebook de preprocesado
 
-La arquitectura se ha implementado utilizando la librería \texttt{TensorFlow/Keras} y está diseñada específicamente para la clasificación binaria. La estructura secuencial del modelo se detalla a continuación:
+\subsubsection*{Arquitectura}
 
-\begin{itemize}
-    \item \textbf{Capa de Entrada y Preprocesado:} Se define una dimensión de entrada de $224 \times 224 \times 1$ píxeles. El uso de un único canal (escala de grises) es una decisión deliberada para reducir la carga computacional y el número de parámetros, dado que la información diagnóstica en radiografías de tórax reside en la intensidad y la textura, no en el color. Inmediatamente después, se aplica una capa de \texttt{Rescaling} para normalizar los valores de los píxeles al rango $[0, 1]$, lo que estabiliza el descenso del gradiente durante el entrenamiento.
-    
-    \item \textbf{Primer Bloque Convolucional:} Compuesto por una capa \texttt{Conv2D} con 32 filtros de tamaño $3 \times 3$ y función de activación \textit{ReLU} . Esta capa es responsable de extraer características de bajo nivel, como bordes y texturas básicas del parénquima pulmonar. Le sigue una capa de \texttt{MaxPooling2D} con ventana de $2 \times 2$, que reduce la dimensionalidad espacial a la mitad, haciendo el modelo más eficiente y proporcionando cierta invariancia a pequeñas traslaciones.
-    
-    \item \textbf{Segundo Bloque Convolucional:} Repite la estructura anterior, pero aumentando la profundidad a 64 filtros de $3 \times 3$. Al operar sobre los mapas de características ya procesados, esta capa aprende patrones de mayor nivel de abstracción, como formas de consolidaciones o patrones reticulonodulares típicos de la neumonía. Se aplica nuevamente \texttt{MaxPooling2D} ($2 \times 2$).
-    
-    \item \textbf{Clasificador (Capas Densas):} Tras aplanar los mapas de características en un vector unidimensional, se introduce una capa densa  de 128 neuronas con activación \textit{ReLU} para combinar las características extraídas. 
-    
-    \item \textbf{Regularización:} Se incorpora una capa de \texttt{Dropout} con una tasa del $50\%$ . Esta capa desactiva aleatoriamente la mitad de las neuronas en cada paso de entrenamiento, obligando a la red a no depender excesivamente de neuronas específicas y mitigando drásticamente el riesgo de sobreajuste , un problema común en modelos médicos con datasets limitados.
-    
-    \item \textbf{Capa de Salida:} Una única neurona densa con función de activación \textit{Sigmoid}. Esta función comprime la salida en un rango de probabilidad $[0, 1]$, donde valores cercanos a $1$ indican una alta probabilidad de neumonía y valores cercanos a $0$ indican un tórax sano.
-\end{itemize}
+El modelo está compuesto por dos bloques convolucionales seguidos de un clasificador totalmente conectado. La disposición de capas se resume en la Tabla~\ref{tab:arquitectura_base}.
 
-\begin{table}[H]
+\begin{table}[h]
 \centering
-\caption{Resumen de la arquitectura del Modelo Base.}
+\caption{Arquitectura del modelo base CNN.}
 \label{tab:arquitectura_base}
-\begin{tabular}{lcc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Capa (Tipo)} & \textbf{Parámetros / Configuración} & \textbf{Salida (Shape)} \\
+\textbf{Capa} & \textbf{Configuración} & \textbf{Salida} & \textbf{Parámetros} \\
 \midrule
-Input & $224 \times 224 \times 1$ & $(None, 224, 224, 1)$ \\
-Rescaling & Factor: $1./255$ & $(None, 224, 224, 1)$ \\
-Conv2D + ReLU & 32 filtros, kernel $3 \times 3$ & $(None, 222, 222, 32)$ \\
-MaxPooling2D & Pool size $2 \times 2$ & $(None, 111, 111, 32)$ \\
-Conv2D + ReLU & 64 filtros, kernel $3 \times 3$ & $(None, 109, 109, 64)$ \\
-MaxPooling2D & Pool size $2 \times 2$ & $(None, 54, 54, 64)$ \\
-Flatten & - & $(None, 186624)$ \\
-Dense + ReLU & 128 neuronas & $(None, 128)$ \\
-Dropout & Tasa: $0.5$ & $(None, 128)$ \\
-Dense (Salida) + Sigmoid & 1 neurona & $(None, 1)$ \\
+Input             & $(180, 180, 1)$           & $(180, 180, 1)$  & 0 \\
+Conv2D            & 32 filtros, $3\times3$, ReLU & $(178, 178, 32)$ & 320 \\
+MaxPooling2D      & pool $2\times2$           & $(89, 89, 32)$   & 0 \\
+Conv2D            & 64 filtros, $3\times3$, ReLU & $(87, 87, 64)$   & 18.496 \\
+MaxPooling2D      & pool $2\times2$           & $(43, 43, 64)$   & 0 \\
+Flatten           & ---                       & $(118.336)$      & 0 \\
+Dense             & 128 neuronas, ReLU        & $(128)$          & 15.147.136 \\
+Dense (salida)    & 1 neurona, sigmoide       & $(1)$            & 129 \\
+\midrule
+\textbf{Total}    &                           &                  & \textbf{15.166.081} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Configuración del Entrenamiento}
-Para la compilación del modelo, se han seleccionado los siguientes hiperparámetros, equilibrando estabilidad y velocidad de convergencia:
+\subsubsection*{Justificación del diseño}
 
 \begin{itemize}
-    \item \textbf{Optimizador:} \texttt{Adam}. Se elige por su capacidad de ajustar la tasa de aprendizaje de forma adaptativa para cada parámetro, lo que suele converger más rápido que el descenso de gradiente estocástico estándar en problemas de visión por computadora.
-    \item \textbf{Función de Pérdida:} \texttt{BinaryCrossentropy}. Es la función matemática estándar y más adecuada para problemas de clasificación con dos clases mutuamente excluyentes.
-    \item \textbf{Métricas de Seguimiento:} Además de la \textit{Accuracy} , se monitoriza explícitamente el \textit{Recall}  y la \textit{Precision}. Como se justificó en la introducción, en el diagnóstico médico el \textit{Recall} es la métrica crítica: priorizamos minimizar los falsos negativos  sobre la precisión general.
+    \item \textbf{Dos bloques convolucionales}: se opta por una profundidad moderada (32$\rightarrow$64 filtros) para extraer primero bordes y texturas locales y, en un segundo nivel, patrones más abstractos  sin aumentar mucho el coste computacional .
+    \item \textbf{Activación ReLU}: introduce no linealidad y mitiga el problema del desvanecimiento del gradiente frente a otras funciones como sigmoide.
+    \item \textbf{MaxPooling $2\times2$}: reduce progresivamente la dimensionalidad espacial a la mitad en cada bloque, aportando invariancia traslacional local y controlando el sobreajuste.
+    \item \textbf{Clasificador denso}: un único nivel oculto de 128 neuronas seguido de una salida sigmoide, adecuada para la clasificación binaria (neumonía / no neumonía).
 \end{itemize}
+
+\subsubsection*{Compilación y entrenamiento}
+
+El modelo se compila con los siguientes hiperparámetros:
+
+\begin{itemize}
+    \item \textbf{Función de pérdida:} \texttt{binary\_crossentropy}, estándar para clasificación binaria con salida sigmoide.
+    \item \textbf{Optimizador:} \texttt{Adam}, por su convergencia rápida y robustez frente a la elección del \emph{learning rate}.
+    \item \textbf{Métricas de seguimiento:} \texttt{accuracy}, \texttt{AUC} y \texttt{precision}/\texttt{recall}, estas últimas especialmente relevantes dado el contexto clínico del problema.
+\end{itemize}
+
+El entrenamiento se realiza durante 6 épocas con un \emph{batch size} de 32, utilizando el conjunto de validación para monitorizar la generalización y detectar posibles signos de sobreajuste a través de la brecha entre las curvas de pérdida de entrenamiento y validación. Este modelo base servirá como referencia frente a la cual comparar, en el Bloque~3, las distintas variantes de \emph{data augmentation} propuestas.
 \newpage
 \subsection{Data augmentation}
 
@@ -816,13 +815,16 @@ Todas las variantes se comparan con el modelo base en la Sección 4 bajo el prot
 \subsection{Arquitectura de articulos científicos}
 \newpage
 \subsection{Transfer learning}
-\newpage
-\subsection{Evaluacion}
+
 
 
 % --- 4. EXPERIMENTACIÓN ---
 \newpage
 \section{Experimentación y Resultados}
+\subsection{Notebook 2}
+
+\newpage
+\subsection{Notebook 3}
 
 Protocolo común de evaluación: matrices de confusión, exactitud, precisión, sensibilidad (\textit{recall}), $F_1$-score y curvas de aprendizaje para cada modelo entrenado.
 
@@ -843,14 +845,19 @@ Protocolo común de evaluación: matrices de confusión, exactitud, precisión, 
 \end{tabular}%
 }
 \end{table}
-
+\newpage
+\subsection{Notebook 4}
+\newpage
+\subsection{Notebook 5}
+\newpage
+\subsection{Notebook 6}
 
 % --- 5. USO DE INTELIGENCIA ARTIFICIAL ---
 \newpage
 \section{Declaración del Uso de Inteligencia Artificial}
 
 \noindent
-\textbf{Herramientas utilizadas:} Gemini Notebook / ChatGPT.\\[0.1cm]
+\textbf{Herramientas utilizadas:} Gemini Notebook / ChatGPT/ Qwen.\\[0.1cm]
 \textbf{Objetivo y alcance:} Asistencia en la estructuración de la memoria, búsqueda bibliográfica, depuración de código en Python y generación de plantillas LaTeX.\\[0.1cm]
 \textbf{Verificación y control:} Todos los desarrollos teóricos y de código han sido revisados, probados y validados por los integrantes del grupo.
 
