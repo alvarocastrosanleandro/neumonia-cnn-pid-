@@ -812,7 +812,171 @@ Todas las variantes se comparan con el modelo base en la Sección 4 bajo el prot
 \newpage
 \subsection{Fine tuning}
 \newpage
-\subsection{Arquitectura de articulos científicos}
+\subsection{Arquitectura de artículos científicos}
+\label{subsec:arq_articulos}
+
+% TODO: ajustar [22], [23], [24] a la numeración real de la bibliografía.
+
+El quinto experimental abandona el diseño propio y reproduce una arquitectura
+publicada en los articulos que hemos leido para desarollar este trabajo. El objetivo es responder a una pregunta distinta
+de las anteriores: hasta ahora se ha medido el efecto de las \textit{técnicas}
+(aumento de datos, regularización, ajuste de hiperparámetros) sobre una misma red;
+aquí se mide el efecto de la \textit{arquitectura} manteniendo fijas todas las demás
+condiciones. Por tanto, este bloque se ejecuta bajo el protocolo común de evaluación
+y sobre las mismas particiones descritas en las secciones anteriores
+que las diferencias observadas sean atribuibles únicamente al diseño de la red.
+
+\subsubsection{Criterios de selección del artículo}
+
+Se han analizado tres publicaciones candidatas. Los criterios de selección han sido:
+(i) que los autores diseñen una CNN desde cero, y no se limiten a reutilizar
+modelos preentrenados ---requisito del bloque, dado que el \textit{transfer learning}
+se estudia de forma independiente en la siguiente seccion.
+(ii) la compatibilidad con nuestro formato de entrada $(180, 180, 1)$ en escala de grises;
+(iii) que el artículo describa la arquitectura con suficiente detalle para poder
+reimplementarla; y (iv) que emplee aumento de datos, para poder reutilizar directamente
+el subconjunto generado en el Bloque~3.
+
+\begin{table}[H]
+\centering
+\caption{Comparativa de los artículos candidatos y decisión adoptada.}
+\label{tab:seleccion_papers}
+\footnotesize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{p{3.1cm} p{3.4cm} p{2.6cm} p{5.4cm}}
+\hline
+\textbf{Referencia} & \textbf{Tipo de modelo} & \textbf{Decisión} & \textbf{Motivo} \\
+\hline
+\textit{Biocybernetics and Biomedical Engineering} 42 (2022) [22] &
+CNN propia con normalización por lotes y \textit{dropout} en la parte convolucional ($\approx 10^{7}$ parámetros). &
+Descartada (parcialmente) &
+Aporta una idea muy útil ---el \textit{dropout} convolucional, con óptimo en torno al $40\%$ según sus autores--- pero está definida sobre entrada de tres canales, lo que obliga a redimensionar y duplicar el canal y rompe la comparación directa con el resto de bloques. Su hallazgo se recupera como regularización en el Bloque~4. \\
+\textit{Biomedical Signal Processing and Control} 112 (2026) [23] &
+Estudio comparativo de seis redes preentrenadas (ResNet, AlexNet, VGGNet, SqueezeNet, DenseNet, InceptionV3). &
+Descartada &
+No propone una arquitectura propia: todo su desarrollo se basa en \textit{transfer learning} sobre un problema de tres clases. Se reserva como referencia para la Sección~\ref{subsec:transfer}. \\
+\textit{Healthcare Analytics} (2023) [24] &
+Conjunto (\textit{ensemble}) de varias CNN diseñadas desde cero que difieren en el tamaño del núcleo de convolución. &
+\textbf{Seleccionada} &
+Diseño propio, entrada en escala de grises compatible con $(180,180,1)$, uso explícito de aumento de datos y una idea arquitectónica ---la diversidad de escalas--- que se puede aislar y evaluar con claridad. \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Idea central: diversidad de escalas mediante el tamaño del núcleo}
+
+La aportación que se reproduce es el uso de \textbf{varias ramas convolucionales idénticas
+en profundidad pero distintas en tamaño de núcleo} ($3\times3$, $5\times5$ y $7\times7$),
+combinadas posteriormente en un único clasificador.
+
+La justificación se apoya directamente en la operación de convolución estudiada en el
+marco teórico. El tamaño del núcleo $K$ determina el \textbf{campo receptivo} de cada
+neurona, es decir, la porción de radiografía que influye en su activación. Con dos bloques
+convolucionales y sendas capas de \textit{pooling} $2\times2$, el campo receptivo efectivo
+sobre la imagen de entrada crece de forma aproximada a $10$, $16$ y $22$ píxeles para
+núcleos de $3$, $5$ y $7$ respectivamente. En términos clínicos:
+
+\begin{itemize}
+    \item Un núcleo $3\times3$ opera sobre vecindarios pequeños y es sensible a
+    \textbf{detalle local}: bordes de las costillas, textura fina del parénquima,
+    micro-opacidades.
+    \item Un núcleo $7\times7$ integra un contexto más amplio y responde mejor a
+    \textbf{patrones extensos}: consolidaciones de un lóbulo completo, derrames,
+    distribución global de la densidad pulmonar.
+    \item El núcleo $5\times5$ actúa como compromiso entre ambos extremos.
+\end{itemize}
+
+Dado que la neumonía no se manifiesta con un único patrón morfológico ---puede aparecer
+como un infiltrado difuso o como una consolidación localizada---, ninguna escala es
+óptima por sí sola. Al combinar ramas con campos receptivos distintos se obtienen
+clasificadores cuyos \textbf{errores están parcialmente descorrelacionados}, que es
+precisamente la condición bajo la cual un \textit{ensemble} mejora a sus componentes
+individuales.
+
+\subsubsection{Arquitectura implementada}
+
+% TODO: contrastar el número exacto de bloques y filtros con la Tabla/Figura del
+% artículo [24] antes de la entrega. Lo descrito aquí es la reimplementación
+% efectuada en el notebook 05, adaptada a la entrada (180,180,1) del proyecto.
+
+Cada rama replica el esquelema del modelo base (Sección~\ref{subsec:modelo_base})
+sustituyendo únicamente el tamaño del núcleo, lo que permite atribuir las diferencias
+de rendimiento a la escala y no a la capacidad de la red. La Tabla~\ref{tab:ramas_kernel}
+resume las tres ramas.
+
+\begin{table}[H]
+\centering
+\caption{Ramas del \textit{ensemble}. Todas comparten la estructura
+Conv--Pool--Conv--Pool--Flatten--Dense(128)--Dense(1, sigmoide) y la entrada
+$(180,180,1)$; solo varía el tamaño del núcleo.}
+\label{tab:ramas_kernel}
+\footnotesize
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Rama} & \textbf{Núcleo} & \textbf{Salida 2.\textsuperscript{o} Pool} & \textbf{Flatten} & \textbf{Campo recept.} & \textbf{Parámetros} \\
+\midrule
+A & $3\times3$ & $(43, 43, 64)$ & $118\,336$ & $\approx 10$ px & $15\,166\,081$ \\
+B & $5\times5$ & $(42, 42, 64)$ & $112\,896$ & $\approx 16$ px & $14\,503\,041$ \\
+C & $7\times7$ & $(40, 40, 64)$ & $102\,400$ & $\approx 22$ px & $13\,209\,473$ \\
+\midrule
+\multicolumn{5}{l}{\textbf{Total del ensemble}} & $\mathbf{42\,878\,595}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Obsérvese un efecto colateral relevante: al no utilizar relleno (\texttt{padding='same'}),
+los núcleos mayores reducen más la dimensionalidad espacial en cada convolución, de modo
+que la rama de $7\times7$ resulta \textit{más ligera} que la de $3\times3$ pese a tener
+núcleos más grandes. El coste adicional del conjunto proviene de entrenar tres redes,
+no de una red más pesada.
+
+\subsubsection{Estrategia de combinación}
+
+Las tres ramas se entrenan de forma independiente con la misma semilla
+(\texttt{SEED = 230406}) y la misma configuración de optimización. La predicción final
+se obtiene por \textbf{votación suave} (\textit{soft voting}), promediando las
+probabilidades sigmoides antes de aplicar el umbral de decisión:
+
+\begin{equation}
+\hat{p}(x) = \frac{1}{3}\sum_{k \in \{3,5,7\}} p_k(x),
+\qquad
+\hat{y}(x) = \mathbb{1}\!\left[\hat{p}(x) \geq \tau\right]
+\end{equation}
+
+Se prefiere la votación suave a la votación por mayoría (\textit{hard voting}) porque
+conserva la confianza de cada rama y permite desplazar el umbral $\tau$ para priorizar
+la sensibilidad, coherente con el criterio clínico mantenido en todo el proyecto. Como
+alternativa se contempla una \textbf{media ponderada} en la que el peso de cada rama
+depende de su AUC en validación:
+
+\begin{equation}
+\hat{p}(x) = \sum_{k} w_k \, p_k(x),
+\qquad
+w_k = \frac{\mathrm{AUC}_k^{\text{val}}}{\sum_j \mathrm{AUC}_j^{\text{val}}}
+\end{equation}
+
+Los pesos se calculan \textbf{exclusivamente con el conjunto de validación}, nunca con
+el de prueba, para no contaminar la evaluación final.
+
+\subsubsection{Condiciones experimentales}
+
+Para que la comparación sea limpia se fijan las siguientes condiciones, idénticas a las
+de los bloques anteriores:
+
+\begin{itemize}
+    \item \textbf{Datos de entrenamiento:} el subconjunto con aumento de datos seleccionado
+    como mejor variante en el Bloque~3, cargado desde
+    \texttt{Subconjunto-datos/}. De este modo el bloque no evalúa el aumento de datos
+    ---ya estudiado--- sino la arquitectura sobre un escenario competitivo.
+    \item \textbf{Validación y prueba:} los conjuntos originales sin transformar, de forma
+    que todas las métricas se obtienen sobre radiografías reales.
+    \item \textbf{Optimización:} \texttt{Adam}, pérdida \texttt{binary\_crossentropy},
+    $15$ épocas y \textit{batch size} $32$.
+    \item \textbf{Métricas:} exactitud, precisión, sensibilidad, especificidad, $F_1$,
+    AUC-ROC y número de falsos negativos, junto con la brecha de sobreajuste.
+\end{itemize}
+
+
 \newpage
 \subsection{Transfer learning}
 
@@ -821,30 +985,205 @@ Todas las variantes se comparan con el modelo base en la Sección 4 bajo el prot
 % --- 4. EXPERIMENTACIÓN ---
 \newpage
 \section{Experimentación y Resultados}
-\subsection{Notebook 2}
+\subsection{Notebook 2: modelo base}
+\label{subsec:exp_notebook2}
 
-\newpage
-\subsection{Notebook 3}
+\subsubsection{Protocolo}
 
-Protocolo común de evaluación: matrices de confusión, exactitud, precisión, sensibilidad (\textit{recall}), $F_1$-score y curvas de aprendizaje para cada modelo entrenado.
+Se entrena la arquitectura propia descrita en la Sección~\ref{subsec:modelo_base} sin
+ninguna técnica de regularización ni aumento de datos, con el fin de establishing
+% (sustituir la palabra anterior por "establecer")
+una \textbf{línea base} frente a la que medir el resto de bloques. La configuración
+empleada es \texttt{Adam} + \texttt{binary\_crossentropy}, $6$ épocas y
+\textit{batch size} $32$, con semilla \texttt{230406}. La evaluación final se realiza
+sobre \texttt{X\_test} ($N = 2\,100$ radiografías, $1\,050$ por clase), que no ha
+intervenido en ningún momento en el entrenamiento ni en el ajuste de hiperparámetros.
+
+\subsubsection{Resultados cuantitativos}
 
 \begin{table}[H]
 \centering
-\caption{Evaluación comparativa sobre el conjunto de prueba (\texttt{X\_test}, $N=2.100$) del Modelo Base frente a las tres variantes de \textit{Data Augmentation} (Bloque 3).}
-\label{tab:resultados_bloque3_da}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{lccccccc}
+\caption{Rendimiento del modelo base sobre el conjunto de prueba.}
+\label{tab:resultados_base}
+\begin{tabular}{lc}
 \toprule
-\textbf{Modelo / Variante} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall (Sens.)} & \textbf{Especificidad} & \textbf{F1-Score} & \textbf{AUC-ROC} & \textbf{FN (Brecha Acc)} \\
+\textbf{Métrica} & \textbf{Valor} \\
 \midrule
-0. Modelo Base (Sin DA) & 0.9581 & 0.9521 & 0.9648 & 0.9514 & 0.9584 & 0.9859 & 37 (+0.0375) \\
-\textbf{1. Variante 1 (Geom. Suave - T.5)} & 0.9452 & 0.9163 & \textbf{0.9800} & 0.9105 & 0.9471 & \textbf{0.9900} & \textbf{21 (+0.0027)} \\
-2. Variante 2 (Geom. + Flip H - T.5) & 0.9367 & 0.9033 & 0.9781 & 0.8952 & 0.9392 & 0.9875 & 23 (+0.0117) \\
-3. Variante 3 (PID Completo - T.2, 3, 5) & 0.9514 & \textbf{0.9620} & 0.9400 & \textbf{0.9629} & \textbf{0.9509} & 0.9893 & 63 (-0.0117) \\
+Exactitud (Accuracy)              & $0{,}9590$ \\
+Precisión                         & $0{,}9406$ \\
+Sensibilidad (Recall)             & $\mathbf{0{,}9800}$ \\
+Especificidad                     & $0{,}9381$ \\
+$F_1$-score                       & $0{,}9599$ \\
+AUC-ROC                           & $0{,}9887$ \\
+\midrule
+Falsos negativos (FN)             & $\mathbf{21}$ \\
+Falsos positivos (FP)             & $65$ \\
+\midrule
+Brecha de sobreajuste (Acc.\ train $-$ val) & $+0{,}0337$ \\
+Brecha de sobreajuste (Loss val $-$ train)  & $+0{,}0791$ \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
+
+\begin{table}[H]
+\centering
+\caption{Matriz de confusión del modelo base sobre \texttt{X\_test}.}
+\label{tab:cm_base}
+\begin{tabular}{llcc}
+\toprule
+& & \multicolumn{2}{c}{\textbf{Predicción}} \\
+\cmidrule(l){3-4}
+& & No neumonía (0) & Neumonía (1) \\
+\midrule
+\multirow{2}{*}{\textbf{Real}}
+& No neumonía (0) & $985$ (VN) & $65$ (FP) \\
+& Neumonía (1)    & $21$ (FN)  & $1\,029$ (VP) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=0.85\textwidth]{figuras/nb02_curvas_base.png}
+% \caption{Curvas de pérdida y exactitud del modelo base.}
+% \label{fig:nb02_curvas}
+% \end{figure}
+
+\subsubsection{Análisis}
+
+El modelo base alcanza ya un rendimiento elevado sin ninguna técnica adicional: una
+AUC-ROC de $0{,}9887$ indica una capacidad discriminativa muy buena, y la sensibilidad
+de $0{,}9800$ implica que \textbf{solo $21$ de las $1\,050$ radiografías con neumonía
+son clasificadas como sanas}. En el contexto clínico definido en la introducción este
+es el indicador prioritario, y el resultado confirma que una CNN de dos bloques
+convolucionales es suficiente para capturar los patrones de opacidad pulmonar presentes
+en el conjunto de datos.
+
+El comportamiento asimétrico entre clases es coherente con ese objetivo: la
+especificidad ($0{,}9381$) es inferior a la sensibilidad, de modo que el modelo tiende
+a ser \textit{conservador} y prefiere marcar un tórax sano como sospechoso ($65$ falsos
+positivos) antes que dejar escapar un caso positivo. Este sesgo es aceptable en un
+sistema de cribado, donde el falso positivo se resuelve con una segunda revisión
+radiológica mientras que el falso negativo puede suponer un alta indebida.
+
+Sin embargo, las curvas de aprendizaje revelan el problema que motiva el resto del
+proyecto. La exactitud de entrenamiento asciende hasta $0{,}9837$ mientras la de
+validación se estanca en $0{,}9500$, y la pérdida de validación alcanza $0{,}1230$
+frente a $0{,}0439$ en entrenamiento. Es decir, a partir de las primeras épocas la red
+\textbf{sigue reduciendo la pérdida sobre los datos que ya conoce sin mejorar su
+generalización}: está memorizando. La brecha de $3{,}37$ puntos porcentuales en
+exactitud y de $0{,}0791$ en pérdida es la evidencia cuantitativa de ese sobreajuste.
+
+\subsubsection{Conclusión del bloque}
+
+El modelo base es un punto de partida sólido ($F_1 = 0{,}9599$, $21$ falsos negativos)
+pero presenta sobreajuste desde las primeras épocas. Queda por tanto justificado
+introducir mecanismos que amplíen la variedad efectiva del conjunto de entrenamiento,
+lo que se aborda en el Bloque~3 mediante aumento de datos fundamentado en las técnicas
+de procesamiento digital de imágenes.
+\newpage
+\subsection{Notebook 3: data augmentation}
+\label{subsec:exp_notebook3}
+
+\subsubsection{Protocolo}
+
+Se entrenan cuatro modelos con \textbf{exactamente la misma arquitectura} del
+Bloque~2 y la misma semilla, variando únicamente el generador conectado a
+\texttt{X\_train}: el modelo base sin aumento y las tres variantes definidas en la
+Sección~\ref{subsec:data_augmentation}. Los conjuntos de validación y prueba
+permanecen intactos en todos los casos.
+
+Cabe señalar que el modelo base se \textbf{reentrena aquí durante $15$ épocas}
+---frente a las $6$ del Bloque~2--- para que las cuatro curvas sean comparables entre
+sí en el mismo horizonte temporal. Por ello sus métricas difieren ligeramente de las
+recogidas en la Tabla~\ref{tab:resultados_base}: no son el mismo entrenamiento, sino
+dos ejecuciones del mismo diseño con distinto número de épocas.
+
+% AQUÍ VA LA TABLA tab:resultados_bloque3_da QUE YA TIENES EN main.tex
+
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=\textwidth]{figuras/nb03_matrices_confusion.png}
+% \caption{Matrices de confusión de las cuatro variantes sobre \texttt{X\_test}.}
+% \label{fig:nb03_cm}
+% \end{figure}
+
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=\textwidth]{figuras/nb03_curvas.png}
+% \caption{Curvas de aprendizaje: reducción de la brecha entrenamiento--validación.}
+% \label{fig:nb03_curvas}
+% \end{figure}
+
+\subsubsection{Efecto sobre el sobreajuste}
+
+El resultado más nítido del bloque no está en la exactitud sino en la
+\textbf{brecha de generalización}. El modelo base presenta una diferencia de $+0{,}0375$
+entre exactitud de entrenamiento y validación; la Variante~1 la reduce a $+0{,}0027$,
+es decir, prácticamente la elimina. La Variante~2 la sitúa en $+0{,}0117$.
+
+El caso de la Variante~3 es cualitativamente distinto: su brecha es \textbf{negativa}
+($-0{,}0117$), lo que significa que el rendimiento en validación supera al de
+entrenamiento. No se trata de una anomalía sino de una consecuencia esperable del
+diseño: el aumento se aplica solo a \texttt{X\_train}, de modo que la red se entrena
+sobre radiografías perturbadas (ruido gaussiano, variaciones de brillo y contraste)
+mientras se valida sobre imágenes limpias. La tarea de entrenamiento es
+objetivamente más difícil que la de validación.
+
+\subsubsection{Análisis por variante}
+
+\paragraph{Variante 1 (geométrico suave).}
+Es la mejor configuración del bloque según el criterio clínico adoptado. Alcanza la
+\textbf{mayor sensibilidad} ($0{,}9800$), el \textbf{menor número de falsos negativos}
+($21$) y la \textbf{mayor AUC-ROC} ($0{,}9900$), reduciendo además la brecha de
+sobreajuste casi a cero. El precio es una caída de la exactitud global
+($0{,}9452$ frente a $0{,}9581$ del base) y de la especificidad ($0{,}9105$): el modelo
+detecta más neumonías a costa de generar más falsos positivos. Dado el reparto
+asimétrico de costes discutido en la introducción, \textbf{este intercambio es
+favorable}. Las transformaciones geométricas suaves ---rotación, traslación y zoom con
+interpolación bilineal--- simulan variaciones reales de posicionamiento del paciente
+sin alterar la validez anatómica, y esa es la razón de que funcionen.
+
+\paragraph{Variante 2 (geométrico $+$ simetría horizontal).}
+Añadir \texttt{horizontal\_flip=True} no aporta mejora: la sensibilidad baja
+ligeramente ($0{,}9781$) y la especificidad cae hasta $0{,}8952$, el valor más bajo de
+las cuatro configuraciones. El resultado es interesante porque \textbf{contradice la
+práctica habitual de la literatura} que emplea el volteo horizontal de forma
+rutinaria. La explicación plausible es que la reflexión invierte la silueta cardíaca
+y la lateralidad de los marcadores anatómicos, obligando a la red a aprender una
+simetría que no se corresponde con la distribución de las imágenes reales de
+validación y prueba. Se documenta como evidencia de que \textit{una transformación
+popular no es necesariamente válida en este dominio}.
+
+\paragraph{Variante 3 (pipeline PID completo).}
+Es la configuración más agresiva y la que obtiene la \textbf{mejor especificidad}
+($0{,}9629$) y precisión ($0{,}9620$), pero a costa de un deterioro severo de la
+sensibilidad: $0{,}9400$ y \textbf{$63$ falsos negativos}, casi el triple que la
+Variante~1. La hipótesis es que las perturbaciones fotométricas ---corrección gamma,
+ajuste de brillo/contraste y ruido gaussiano--- alteran precisamente la señal
+diagnóstica: la opacidad alveolar se define por su \textit{densidad relativa} de
+niveles de gris, y modificar esa distribución de forma aleatoria difumina la frontera
+entre parénquima sano e infiltrado. Es decir, se está introduciendo ruido
+\textbf{sobre la variable que contiene la información clínica}.
+
+\subsubsection{Conclusión del bloque}
+
+Se selecciona la \textbf{Variante~1} como configuración de aumento de datos del
+proyecto y su modelo se guarda en \texttt{best\_model\_notebook03.keras} para los
+bloques posteriores. Las conclusiones de fondo son tres:
+
+\begin{enumerate}
+    \item El aumento de datos \textbf{cumple su función principal}: elimina el
+    sobreajuste detectado en el Bloque~2 y mejora la capacidad discriminativa
+    (AUC de $0{,}9859$ a $0{,}9900$).
+    \item \textbf{Más augmentación no es mejor augmentación}. Existe un punto a partir
+    del cual las transformaciones dejan de simular variabilidad real y empiezan a
+    destruir información diagnóstica; la Variante~3 lo demuestra con claridad.
+    \item La selección debe hacerse con la \textbf{métrica adecuada al dominio}. Si el
+    criterio hubiera sido la exactitud global se habría elegido el modelo base
+    ($0{,}9581$), que sin embargo pierde $16$ neumonías más que la Variante~1. Este
+    bloque ilustra por qué la métrica de selección no es un detalle menor.
+\end{enumerate}
 \newpage
 \subsection{Notebook 4}
 \newpage
