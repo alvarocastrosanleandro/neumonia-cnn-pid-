@@ -851,7 +851,7 @@ Para evaluar la capacidad de generalización del modelo optimizado sobre datos n
 
 Los valores obtenidos reflejan un desempeño elevado y equilibrado entre ambas clases: se alcanza una sensibilidad de $\text{Recall}_{\text{neumonía}} = 0.9895$ y una especificidad ($\text{Recall}_{\text{no neumonía}}$) de $0.9876$. Esto confirma que la combinación de aumento de datos, regularización y búsqueda de hiperparámetros permite detectar prácticamente la totalidad de los casos patológicos manteniendo una tasa mínima de falsas alarmas en pacientes sanos.
 
-Con el objetivo de detallar la distribución de aciertos y errores de clasificación, en la Figura~\ref{fig:matriz_confusion_notebook4} se muestra la matriz de confusión obtenida por el modelo final:
+Con el objetivo de detallar la distribución exacta de aciertos y errores de clasificación, en la Figura~\ref{fig:matriz_confusion_notebook4} se muestra la matriz de confusión obtenida por el modelo final, donde se observa que el clasificador acierta $1039$ de los $1050$ casos con neumonía (registrando únicamente $11$ falsos negativos) y clasifica correctamente $1037$ de los $1050$ casos sanos ($13$ falsos positivos):
 
 \begin{figure}[H]
 \centering
