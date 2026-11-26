@@ -831,7 +831,36 @@ Para ello, se ha definido la función \texttt{build\_model}, que toma la arquite
     
     \item \textbf{Optimizador y tasa de aprendizaje:} Se exploran los optimizadores \texttt{Adam} y \texttt{RMSprop} combinados con tasas de aprendizaje $\eta \in \{10^{-3}, 5 \cdot 10^{-4}, 10^{-4}\}$, apoyados por los \textit{callbacks} \texttt{EarlyStopping} y \texttt{ReduceLROnPlateau} para detener el entrenamiento cuando la pérdida de validación deja de mejorar.
 \end{itemize}
+
+\subsubsection{Configuración de \textit{callbacks} y ejecución del \textit{tuner}}
+Una vez definida la arquitectura y el espacio de búsqueda de hiperparámetros, se configuran los \textit{callbacks} de Keras que supervisarán el proceso de optimización. En Keras, los \textit{callbacks} son objetos que se ejecutan automáticamente en momentos concretos del ciclo de vida del entrenamiento (como el inicio o el final de cada época) para monitorizar métricas y tomar decisiones dinámicas sin intervención manual.
+
+En este proyecto se emplean dos \textit{callbacks} coordinados sobre la pérdida de validación (\texttt{val\_loss}) para estabilizar la convergencia y prevenir el sobreajuste:
+
+\begin{enumerate}
+    \item \textbf{\textit{Early Stopping}:} su función principal es evitar el \textit{overfitting} y el gasto computacional innecesario. Para ello, monitoriza la pérdida de validación (\texttt{val\_loss}) al finalizar cada época con una paciencia de $5$ épocas (\texttt{patience=5}). Si transcurren cinco épocas consecutivas sin que \texttt{val\_loss} disminuya respecto a su mejor registro, el entrenamiento se detiene automáticamente. Además, al activar el parámetro \texttt{restore\_best\_weights=True}, se garantiza que el modelo conserve los pesos correspondientes a la época con menor pérdida de validación y no los de la última época ejecutada.
+
+    \item \textbf{\textit{Reduce LR on Plateau}:} este mecanismo ajusta dinámicamente la tasa de aprendizaje cuando el aprendizaje se estanca en una meseta (\textit{plateau}). Al igual que el anterior, monitoriza \texttt{val\_loss}, pero con una paciencia menor (\texttt{patience=3}): si la pérdida de validación no mejora durante tres épocas seguidas, la tasa de aprendizaje actual se multiplica por un factor de reducción (\texttt{factor=0.2}), estableciendo como cota inferior un valor mínimo de $10^{-6}$ (\texttt{min\_lr=1e-6}). De este modo, si el optimizador oscila cerca de un mínimo sin lograr converger, la reducción del paso permite realizar actualizaciones más precisas de los pesos antes de que llegue a activarse la parada temprana.
+\end{enumerate}
+
+Finalmente, se ejecuta la búsqueda mediante \texttt{tuner.search} utilizando el conjunto de entrenamiento aumentado (\texttt{X\_train}, \texttt{y\_train}) y validando sobre el conjunto de validación original (\texttt{X\_val}, \texttt{y\_val}) con un tamaño de lote de $32$ imágenes. Se configuran $8$ combinaciones aleatorias (\texttt{max\_trials=8}) de hasta $12$ épocas cada una, seleccionando aquella configuración que maximice la métrica objetivo \texttt{val\_auc}.
+
+Tras obtener la mejor combinación de hiperparámetros, se entrena finalmente la arquitectura de la sección \ref{subsec:modelo_base} con esta nueva configuración durante un máximo de $20$ épocas. Este margen de épocas permite que la red converja adecuadamente tras incorporar la regularización, con la garantía de que, si comienza a producirse sobreajuste, la combinación de \texttt{EarlyStopping} y \texttt{ReduceLROnPlateau} detendrá el proceso y almacenará únicamente los pesos correspondientes a la época con menor pérdida de validación.
+\subsubsection{Evaluación de resultados y conclusión}
+Para evaluar la capacidad de generalización del modelo optimizado sobre datos no vistos, se analiza su rendimiento sobre el conjunto de prueba (\texttt{X\_test}, \texttt{y\_test}). Dado el contexto clínico del problema, se prioriza el comportamiento de la métrica \textit{Recall} sobre la clase positiva (sensibilidad), puesto que en el cribado médico resulta crítico minimizar los falsos negativos para evitar que pacientes con neumonía queden sin diagnosticar.
+
+Los valores obtenidos reflejan un desempeño elevado y equilibrado entre ambas clases: se alcanza una sensibilidad de $\text{Recall}_{\text{neumonía}} = 0.9895$ y una especificidad ($\text{Recall}_{\text{no neumonía}}$) de $0.9876$. Esto confirma que la combinación de aumento de datos, regularización y búsqueda de hiperparámetros permite detectar prácticamente la totalidad de los casos patológicos manteniendo una tasa mínima de falsas alarmas en pacientes sanos.
+
+Con el objetivo de detallar la distribución de aciertos y errores de clasificación, en la Figura~\ref{fig:matriz_confusion_notebook4} se muestra la matriz de confusión obtenida por el modelo final:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{figuras/09_matriz_confusion_notebook4.png}
+\caption{Matriz de confusión del modelo regularizado y optimizado sobre el conjunto de prueba.}
+\label{fig:matriz_confusion_notebook4}
+\end{figure}
 \newpage
+
 \subsection{Arquitectura de artículos científicos}
 \label{subsec:arq_articulos}
 
