@@ -809,8 +809,28 @@ El flujo de procesamiento (\textit{pipeline}) implementado recibe como entrada l
 \end{enumerate}
 
 Todas las variantes se comparan con el modelo base en la Sección 4 bajo el protocolo común (matriz de confusión, exactitud, precisión, sensibilidad/\textit{recall}, especificidad, F1-score y curvas de aprendizaje de pérdida y exactitud), priorizando la mejora en la \textbf{sensibilidad (\textit{recall})} para minimizar los falsos negativos clínicos y comprobando cómo la proximidad entre las curvas de entrenamiento y validación demuestra la reducción del sobreajuste.
+
 \newpage
-\subsection{Fine tuning}
+
+\subsection{Regularización y optimización de hiperparámetros}
+En las etapas anteriores se ha realizado el preprocesado de las radiografías, se ha definido una arquitectura CNN base y se ha mitigado parcialmente el sobreajuste mediante técnicas de \textit{Data Augmentation}. No obstante, para maximizar la capacidad de generalización del modelo sobre datos no vistos y reducir aún más la brecha entre entrenamiento y validación, en esta fase se incorporan mecanismos de regularización y se realiza una búsqueda sistemática de hiperparámetros (\textit{hyperparameter tuning}).
+
+\subsubsection{Espacio de búsqueda y regularización L2}
+Para automatizar la selección de la configuración óptima se ha empleado la librería \texttt{keras\_tuner} mediante una estrategia de búsqueda aleatoria (\texttt{RandomSearch}), tomando como métrica objetivo el área bajo la curva ROC en validación (\texttt{val\_auc}). Se ha priorizado \texttt{val\_auc} frente a otras métricas como el \textit{recall} para evaluar la capacidad discriminativa global del clasificador sin incentivar soluciones triviales que clasifiquen todas las muestras como positivas.
+
+Para ello, se ha definido la función \texttt{build\_model}, que toma la arquitectura base diseñada en la sección \ref{subsec:modelo_base} e introduce distintos grados de regularización y parámetros de optimización:
+
+\begin{itemize}
+    \item \textbf{Regularización L2 (\textit{weight decay}):} Se aplica sobre los núcleos de las capas convolucionales y la capa densa oculta evaluando valores $\lambda \in \{0, 10^{-4}, 10^{-3}\}$. Esta técnica incorpora un término de penalización a la función de pérdida proporcional a la suma del cuadrado de los pesos:
+    \begin{equation}
+        \mathcal{L}_{\text{total}} = \mathcal{L}_{\text{BCE}} + \lambda \sum_{i} w_i^2
+    \end{equation}
+    Al penalizar los pesos de gran magnitud, se fuerza a la red a distribuir su aprendizaje entre múltiples características visuales en lugar de depender de píxeles aislados o artefactos de las radiografías de entrenamiento, reduciendo así el riesgo de \textit{overfitting}.
+    
+    \item \textbf{Normalización por lotes (\textit{Batch Normalization}) y \textit{Dropout}:} Se evalúa de forma booleana la inclusión de capas de \texttt{BatchNormalization} antes de las activaciones ReLU para estabilizar las distribuciones internas durante el entrenamiento, junto con una capa de \texttt{Dropout} (con tasas entre $0.2$ y $0.5$) previa a la salida sigmoide para evitar la coadaptación de neuronas en el bloque denso.
+    
+    \item \textbf{Optimizador y tasa de aprendizaje:} Se exploran los optimizadores \texttt{Adam} y \texttt{RMSprop} combinados con tasas de aprendizaje $\eta \in \{10^{-3}, 5 \cdot 10^{-4}, 10^{-4}\}$, apoyados por los \textit{callbacks} \texttt{EarlyStopping} y \texttt{ReduceLROnPlateau} para detener el entrenamiento cuando la pérdida de validación deja de mejorar.
+\end{itemize}
 \newpage
 \subsection{Arquitectura de artículos científicos}
 \label{subsec:arq_articulos}
@@ -1089,8 +1109,7 @@ de procesamiento digital de imágenes.
 
 Se entrenan cuatro modelos con \textbf{exactamente la misma arquitectura} del
 Bloque~2 y la misma semilla, variando únicamente el generador conectado a
-\texttt{X\_train}: el modelo base sin aumento y las tres variantes definidas en la
-Sección~\ref{subsec:data_augmentation}. Los conjuntos de validación y prueba
+\texttt{X\_train}: el modelo base sin aumento y las tres variantes definidas en la Sección~\ref{subsec:data_augmentation}. Los conjuntos de validación y prueba
 permanecen intactos en todos los casos.
 
 Cabe señalar que el modelo base se \textbf{reentrena aquí durante $15$ épocas}
@@ -1301,5 +1320,11 @@ Registro detallado del trabajo individual acumulado hasta completar las 50 horas
 \noindent \hypertarget{ref:20}{[20]} Salman Khan, Hossein Rahmani, Syed Afaq Ali Shah and Mohammed Bennamoun. \textit{Convolutional Neural Network}, pages 43--68. Springer International Publishing, 2018. ISBN 9783031018213. doi: 10.1007/978-3-031-01821-3\_4. URL \url{http://dx.doi.org/10.1007/978-3-031-01821-3_4}.
 
 \smallskip
+
+\noindent \hypertarget{ref:21}{[21]} François Chollet. \textit{Deep Learning with Python 2nd edition}, page 234. Manning, 2021. ISBN 9781617296864. URL \url{https://sourestdeeds.github.io/pdf/Deep%20Learning%20with%20Python.pdf}.
+
+\smallskip
+
+\noindent \hypertarget{ref:22}{[22]} Aders Krogh, John A. Hertz. \textit{A Simple Weight Decay Can Improve Generalization}. URL \url{https://proceedings.neurips.cc/paper/1991/file/8eefcfdf5990e441f0fb6f3fad709e21-Paper.pdf}.
 
 \end{document}
